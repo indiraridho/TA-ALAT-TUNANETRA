@@ -1,0 +1,64 @@
+// Sensor 1 (Depan/Kiri)
+const int trigPin1 = 5;
+const int echoPin1 = 18;
+
+// Sensor 2 (Belakang/Kanan)
+const int trigPin2 = 13;
+const int echoPin2 = 12;
+
+const int vibroPin = 19;
+
+#define SOUND_SPEED 0.034
+
+long duration1, duration2;
+float distance1, distance2;
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(trigPin1, OUTPUT);
+  pinMode(echoPin1, INPUT);
+  
+  pinMode(trigPin2, OUTPUT);
+  pinMode(echoPin2, INPUT);
+  
+  pinMode(vibroPin, OUTPUT);
+}
+
+// Fungsi pembantu agar kode lebih rapi
+float bacaJarak(int trig, int echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  
+  long duration = pulseIn(echo, HIGH, 30000); // Timeout 30ms agar tidak hang
+  return duration * SOUND_SPEED / 2;
+}
+
+void loop() {
+  // Ambil data dari kedua sensor
+  distance1 = bacaJarak(trigPin1, echoPin1);
+  delay(10); // Jeda singkat agar tidak saling mengganggu (cross-talk)
+  distance2 = bacaJarak(trigPin2, echoPin2);
+
+  // Logika Pengecekan
+  bool obstacle1 = (distance1 > 0 && distance1 < 100);
+  bool obstacle2 = (distance2 > 0 && distance2 < 100);
+
+  if (obstacle1 || obstacle2) {
+    digitalWrite(vibroPin, HIGH);
+    Serial.print("OBSTACLE DETECTED! | S1: ");
+    Serial.print(distance1);
+    Serial.print(" cm | S2: ");
+    Serial.print(distance2);
+    Serial.println(" cm");
+  } 
+  else {
+    digitalWrite(vibroPin, LOW);
+    Serial.println("Status: NO OBSTACLE");
+  }
+
+  delay(100);
+}
