@@ -1,0 +1,82 @@
+// Definisi Pin Sensor 1
+const int trig1 = 5;
+const int echo1 = 18;
+
+// Definisi Pin Sensor 2
+const int trig2 = 13;
+const int echo2 = 12;
+
+// Definisi Pin Sensor 3
+const int trig3 = 14;
+const int echo3 = 27;
+
+// Pin Motor Getar
+const int vibroPin = 19;
+
+#define SOUND_SPEED 0.034
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(trig1, OUTPUT); pinMode(echo1, INPUT);
+  pinMode(trig2, OUTPUT); pinMode(echo2, INPUT);
+  pinMode(trig3, OUTPUT); pinMode(echo3, INPUT);
+  
+  pinMode(vibroPin, OUTPUT);
+  Serial.println("Sistem 3 Sensor Siap...");
+}
+
+float ambilJarak(int t, int e) {
+  digitalWrite(t, LOW);
+  delayMicroseconds(2);
+  digitalWrite(t, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  
+  // Timeout 30000us (30ms) cukup untuk mendeteksi hingga ~500cm
+  long duration = pulseIn(e, HIGH, 30000); 
+  float dist = duration * SOUND_SPEED / 2;
+  
+  // Jika pulseIn timeout (hasil 0), anggap jarak sangat jauh
+  if (dist <= 0) return 999.0;
+  return dist;
+}
+
+void tampilkanStatus(String namaSensor, float jarak) {
+  Serial.print(namaSensor + ": ");
+  if (jarak >= 500.0) {
+    Serial.print("NO OBSTACLE");
+  } else {
+    Serial.print(jarak);
+    Serial.print(" cm");
+    if (jarak < 100.0) {
+      Serial.print(" [!] ALARM [!]");
+    }
+  }
+  Serial.print(" | ");
+}
+
+void loop() {
+  // 1. Baca semua sensor dengan jeda antar sensor
+  float d1 = ambilJarak(trig1, echo1);
+  delay(30); 
+  float d2 = ambilJarak(trig2, echo2);
+  delay(30);
+  float d3 = ambilJarak(trig3, echo3);
+
+  // 2. Tampilkan status ke Serial Monitor
+  tampilkanStatus("S1", d1);
+  tampilkanStatus("S2", d2);
+  tampilkanStatus("S3", d3);
+  Serial.println(); // Baris baru
+
+  // 3. Logika Motor Getar (Hidup jika salah satu sensor < 100cm)
+  if (d1 < 100 || d2 < 100 || d3 < 100) {
+    digitalWrite(vibroPin, HIGH);
+  } 
+  else {
+    digitalWrite(vibroPin, LOW);
+  }
+
+  delay(100); 
+}
