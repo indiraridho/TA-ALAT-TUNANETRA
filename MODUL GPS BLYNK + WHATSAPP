@@ -1,0 +1,91 @@
+#define BLYNK_TEMPLATE_ID "UBAH_DI_SINI"
+#define BLYNK_TEMPLATE_NAME "GPS Tracker"
+#define BLYNK_AUTH_TOKEN "UBAH_DI_SINI"
+
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+#include <TinyGPS++.h>
+#include <HardwareSerial.h>
+#include <HTTPClient.h>
+
+// Konfigurasi WiFi & CallMeBot
+char ssid[] = "Nama_WiFi_Anda";
+char pass[] = "Password_WiFi_Anda";
+String phoneNumber = "+628123456789"; // Gunakan format internasional
+String apiKey = "123456";              // API Key dari CallMeBot
+
+#define BUTTON_PIN 4 // Pin untuk Push Button
+
+TinyGPSPlus gps;
+HardwareSerial SerialGPS(2); 
+BlynkTimer timer;
+
+float lastLat = 0;
+float lastLng = 0;
+
+// Fungsi Mengirim Pesan WhatsApp
+void sendWhatsApp(String pesan) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    // URL CallMeBot: api.callmebot.com/whatsapp.php?phone=[nomor]&text=[pesan]&apikey=[key]
+    String url = "http://api.callmebot.com/whatsapp.php?phone=" + phoneNumber + 
+                 "&text=" + pesan + 
+                 "&apikey=" + apiKey;
+    
+    url.replace(" ", "%20"); // Mengganti spasi dengan format URL
+    
+    http.begin(url);
+    int httpCode = http.GET();
+    if (httpCode > 0) Serial.println("WhatsApp Terkirim!");
+    else Serial.println("Gagal kirim WhatsApp");
+    http.end();
+  }
+}
+
+void checkGPS() {
+  while (SerialGPS.available() > 0) {
+    if (gps.encode(SerialGPS.read())) {
+      if (gps.location.isValid()) {
+        lastLat = gps.location.lat();
+        lastLng = gps.location.lng();
+        // Update peta Blynk secara rutin
+        Blynk.virtualWrite(V1, 1, lastLat, lastLng, "My Tracker");
+      }
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // Tombol dengan internal pull-up
+  
+  SerialGPS.begin(9600, SERIAL_8N1, 16, 17);
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  timer.setInterval(5000L, checkGPS);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+
+  // Cek jika tombol ditekan (LOW)
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    delay(200); // Debounce sederhana
+    if (lastLat != 0) {
+      Serial.println("Tombol ditekan! Mengirim lokasi ke WA...");
+      
+      // Membuat link Google Maps agar bisa diklik di WA
+      String msg = "SOS! Lokasi saya saat ini: https://www.google.com/maps?q=" + 
+                   String(lastLat, 6) + "," + String(lastLng, 6);
+      
+      sendWhatsApp(msg);
+      
+      // Tunggu sampai tombol dilepas agar tidak kirim berulang-ulang
+      while(digitalRead(BUTTON_PIN) == LOW); 
+    } else {
+      Serial.println("GPS belum mendapatkan lokasi (Fix).");
+    }
+  }
+}
