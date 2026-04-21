@@ -1,1 +1,36 @@
+// Gunakan angka GPIO sesuai label D di board
+const int trigPin = 5;  // Pin D5
+const int echoPin = 18; // Pin D18
+const int vibroPin = 19; // Pin D19
 
+#define SOUND_SPEED 0.034
+long duration;
+float distanceCm;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(vibroPin, OUTPUT);
+}
+
+void loop() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  
+  duration = pulseIn(echoPin, HIGH);
+  distanceCm = duration * SOUND_SPEED / 2;
+  
+  if (distanceCm > 0 && distanceCm < 100) {
+    digitalWrite(vibroPin, HIGH); // Getar nyala
+    Serial.print("OBJEK DEKAT: ");
+    Serial.print(distanceCm);
+    Serial.println(" cm");
+  } else {
+    digitalWrite(vibroPin, LOW); // Getar mati
+  }
+  delay(100);
+}
