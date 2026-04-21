@@ -1,0 +1,80 @@
+// --- Konfigurasi Pin Sensor ---
+const int trig1 = 5;  const int echo1 = 18;
+const int trig2 = 13; const int echo2 = 12;
+const int trig3 = 14; const int echo3 = 27;
+
+// --- Konfigurasi Pin Motor Getar ---
+const int vibro1 = 19;
+const int vibro2 = 21;
+const int vibro3 = 22;
+
+#define SOUND_SPEED 0.034
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Setup Sensor
+  pinMode(trig1, OUTPUT); pinMode(echo1, INPUT);
+  pinMode(trig2, OUTPUT); pinMode(echo2, INPUT);
+  pinMode(trig3, OUTPUT); pinMode(echo3, INPUT);
+  
+  // Setup Motor Getar
+  pinMode(vibro1, OUTPUT);
+  pinMode(vibro2, OUTPUT);
+  pinMode(vibro3, OUTPUT);
+
+  Serial.println("Sistem 3 Sensor & 3 Vibrator Siap...");
+}
+
+float ambilJarak(int t, int e) {
+  digitalWrite(t, LOW);
+  delayMicroseconds(2);
+  digitalWrite(t, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  
+  long duration = pulseIn(e, HIGH, 30000); 
+  float dist = duration * SOUND_SPEED / 2;
+  
+  if (dist <= 0) return 999.0;
+  return dist;
+}
+
+void prosesSensor(String nama, float jarak, int pinVibro) {
+  Serial.print(nama + ": ");
+  
+  if (jarak >= 500.0) {
+    Serial.print("NO OBSTACLE");
+    digitalWrite(pinVibro, LOW); // Mati jika jauh
+  } 
+  else {
+    Serial.print(jarak);
+    Serial.print(" cm");
+    
+    // Logika Getar per Sensor
+    if (jarak < 100.0) {
+      digitalWrite(pinVibro, HIGH); // Nyala jika < 100cm
+      Serial.print(" [!] VIBRATE [!]");
+    } else {
+      digitalWrite(pinVibro, LOW);  // Mati jika antara 100-500cm
+    }
+  }
+  Serial.print(" | ");
+}
+
+void loop() {
+  // 1. Baca Jarak
+  float d1 = ambilJarak(trig1, echo1);
+  delay(20); 
+  float d2 = ambilJarak(trig2, echo2);
+  delay(20);
+  float d3 = ambilJarak(trig3, echo3);
+
+  // 2. Proses masing-masing sensor dan motornya
+  prosesSensor("S1", d1, vibro1);
+  prosesSensor("S2", d2, vibro2);
+  prosesSensor("S3", d3, vibro3);
+  
+  Serial.println(); // Baris baru di Serial Monitor
+  delay(200); 
+}
