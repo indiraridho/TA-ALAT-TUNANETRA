@@ -1,4 +1,4 @@
-// KONFIR
+// KONFIGURASI
 const int trig1 = 5;  const int echo1 = 18;
 const int trig2 = 13; const int echo2 = 12;
 const int trig3 = 14; const int echo3 = 27;
