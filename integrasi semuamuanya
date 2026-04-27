@@ -1,0 +1,131 @@
+/* PROJECT: Smart Cane for the Blind
+   Features: 3x Ultrasonic, 3x Vibration, GPS Live Tracking, WhatsApp SOS, Voice Alerts
+*/
+
+#define BLYNK_TEMPLATE_ID "UBAH_DI_SINI"
+#define BLYNK_TEMPLATE_NAME "GPS Tracker"
+#define BLYNK_AUTH_TOKEN "UBAH_DI_SINI"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <TinyGPS++.h>
+#include <HTTPClient.h>
+#include <DFRobotDFPlayerMini.h>
+
+// --- KONFIGURASI USER ---
+char ssid[] = "Nama_WiFi";
+char pass[] = "Password_WiFi";
+String phoneNumber = "+628xxxxxxx"; 
+String apiKey = "xxxxxx";
+
+// --- PINOUT ---
+const int trig1 = 5;  const int echo1 = 18; // Kiri
+const int trig2 = 13; const int echo2 = 12; // Depan
+const int trig3 = 14; const int echo3 = 27; // Kanan
+const int vibro1 = 19; const int vibro2 = 21; const int vibro3 = 22;
+const int BUTTON_SOS = 4;
+
+// --- OBJECTS ---
+TinyGPSPlus gps;
+HardwareSerial SerialGPS(2);   // GPS: RX2=16, TX2=17
+HardwareSerial SerialMP3(1);   // MP3: RX=25, TX=26 (TX ESP ke RX MP3)
+DFRobotDFPlayerMini myMP3;
+BlynkTimer timer;
+
+float lastLat = 0, lastLng = 0;
+unsigned long jedaSuara = 0;
+
+float ambilJarak(int t, int e) {
+  digitalWrite(t, LOW); delayMicroseconds(2);
+  digitalWrite(t, HIGH); delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  long duration = pulseIn(e, HIGH, 25000); 
+  float dist = duration * 0.034 / 2;
+  return (dist <= 0) ? 999.0 : dist;
+}
+
+void kirimWA(String link) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "http://api.callmebot.com/whatsapp.php?phone=" + phoneNumber + "&text=" + link + "&apikey=" + apiKey;
+    url.replace(" ", "%20");
+    http.begin(url);
+    http.GET();
+    http.end();
+    Serial.println("Pesan SOS Terkirim!");
+  }
+}
+
+void sistemUtama() {
+  // 1. Cek Jarak
+  float dKiri = ambilJarak(trig1, echo1);
+  float dDepan = ambilJarak(trig2, echo2);
+  float dKanan = ambilJarak(trig3, echo3);
+
+  // 2. Kendali Getar (Aktif jika < 100cm)
+  digitalWrite(vibro1, (dKiri < 100.0) ? HIGH : LOW);
+  digitalWrite(vibro2, (dDepan < 100.0) ? HIGH : LOW);
+  digitalWrite(vibro3, (dKanan < 100.0) ? HIGH : LOW);
+
+  // 3. Kendali Suara (Cek tiap 3 detik agar tidak berisik)
+  if (millis() - jedaSuara > 3000) {
+    if (dDepan < 100.0) { 
+      myMP3.play(2); // Play file 0002.mp3 (Depan prioritas utama)
+      jedaSuara = millis();
+    } else if (dKiri < 100.0) { 
+      myMP3.play(1); // Play file 0001.mp3
+      jedaSuara = millis();
+    } else if (dKanan < 100.0) { 
+      myMP3.play(3); // Play file 0003.mp3
+      jedaSuara = millis();
+    }
+  }
+
+  // 4. Update GPS
+  while (SerialGPS.available() > 0) {
+    if (gps.encode(SerialGPS.read())) {
+      if (gps.location.isValid()) {
+        lastLat = gps.location.lat();
+        lastLng = gps.location.lng();
+        Blynk.virtualWrite(V1, 1, lastLat, lastLng, "Posisi Pengguna");
+      }
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  SerialGPS.begin(9600, SERIAL_8N1, 16, 17);
+  SerialMP3.begin(9600, SERIAL_8N1, 25, 26);
+  
+  pinMode(trig1, OUTPUT); pinMode(echo1, INPUT);
+  pinMode(trig2, OUTPUT); pinMode(echo2, INPUT);
+  pinMode(trig3, OUTPUT); pinMode(echo3, INPUT);
+  pinMode(vibro1, OUTPUT); pinMode(vibro2, OUTPUT); pinMode(vibro3, OUTPUT);
+  pinMode(BUTTON_SOS, INPUT_PULLUP);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  if (!myMP3.begin(SerialMP3)) {
+    Serial.println("Gagal konek modul MP3!");
+  } else {
+    myMP3.volume(28); // Volume 0-30
+  }
+
+  timer.setInterval(300L, sistemUtama);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+
+  // Logika Tombol SOS
+  if (digitalRead(BUTTON_SOS) == LOW) {
+    delay(200);
+    if (lastLat != 0) {
+      String linkMaps = "SOS!_Lokasi_saya:_https://maps.google.com/?q=" + String(lastLat, 6) + "," + String(lastLng, 6);
+      kirimWA(linkMaps);
+      while(digitalRead(BUTTON_SOS) == LOW);
+    }
+  }
+}
