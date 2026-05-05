@@ -1,0 +1,124 @@
+#include <SoftwareSerial.h>
+
+// --- Konfigurasi MP3 YX5300 ---
+// Hubungkan TX Modul ke D25, RX Modul ke D26
+#define MP3_RX_PIN 25 
+#define MP3_TX_PIN 26 
+SoftwareSerial mp3Serial(MP3_RX_PIN, MP3_TX_PIN);
+
+// --- Konfigurasi Pin Sensor HC-SR04 ---
+const int trig1 = 5;  const int echo1 = 18; // Depan
+const int trig2 = 13; const int echo2 = 12; // Kiri
+const int trig3 = 14; const int echo3 = 27; // Kanan
+
+// --- Konfigurasi Pin Motor Getar ---
+const int vibro1 = 19; // Depan
+const int vibro2 = 21; // Kiri
+const int vibro3 = 22; // Kanan
+
+// --- Variabel Logika ---
+#define SOUND_SPEED 0.034
+unsigned long lastVoiceTime = 0;
+const int jedaSuara = 3000;  // Suara muncul setiap 3 detik agar tidak bising
+const int jarakDeteksi = 100; // Jarak rintangan (100cm)
+
+// --- Fungsi Protokol YX5300 ---
+void sendMP3Command(uint8_t command, uint16_t dat) {
+  // Protokol Hexadecimal standar YX5300
+  uint8_t frame[8] = {0x7e, 0xff, 0x06, command, 0x00, (uint8_t)(dat >> 8), (uint8_t)(dat & 0xff), 0xef};
+  for (uint8_t i = 0; i < 8; i++) {
+    mp3Serial.write(frame[i]);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  mp3Serial.begin(9600); // Kecepatan baud modul MP3
+  
+  // Setup Sensor
+  pinMode(trig1, OUTPUT); pinMode(echo1, INPUT);
+  pinMode(trig2, OUTPUT); pinMode(echo2, INPUT);
+  pinMode(trig3, OUTPUT); pinMode(echo3, INPUT);
+  
+  // Setup Motor Getar
+  pinMode(vibro1, OUTPUT);
+  pinMode(vibro2, OUTPUT);
+  pinMode(vibro3, OUTPUT);
+
+  delay(2000); // Tunggu modul siap
+  sendMP3Command(0x06, 28); // Set Volume (skala 0-30)
+  
+  Serial.println("======================================");
+  Serial.println("SISTEM NAVIGASI SUARA & GETAR AKTIF");
+  Serial.println("======================================");
+}
+
+float ambilJarak(int t, int e) {
+  digitalWrite(t, LOW);
+  delayMicroseconds(2);
+  digitalWrite(t, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  
+  long duration = pulseIn(e, HIGH, 30000); 
+  float dist = duration * SOUND_SPEED / 2;
+  
+  if (dist <= 0 || dist > 500) return 999.0;
+  return dist;
+}
+
+void prosesLogika(float d1, float d2, float d3) {
+  bool suaraTerpilih = false;
+
+  // 1. Cek Depan (Prioritas Utama)
+  if (d1 < jarakDeteksi) {
+    digitalWrite(vibro1, HIGH);
+    if (millis() - lastVoiceTime > jedaSuara) {
+      Serial.println("[!] SUARA: AWAS KIRI");
+      sendMP3Command(0x03, 0x0001); // Putar File 001.mp3
+      suaraTerpilih = true;
+    }
+  } else { digitalWrite(vibro1, LOW); }
+
+  // 2. Cek Kiri
+  if (d2 < jarakDeteksi) {
+    digitalWrite(vibro2, HIGH);
+    if (!suaraTerpilih && (millis() - lastVoiceTime > jedaSuara)) {
+      Serial.println("[!] SUARA: AWAS KANAN");
+      sendMP3Command(0x03, 0x0002); // Putar File 002.mp3
+      suaraTerpilih = true;
+    }
+  } else { digitalWrite(vibro2, LOW); }
+
+  // 3. Cek Kanan
+  if (d3 < jarakDeteksi) {
+    digitalWrite(vibro3, HIGH);
+    if (!suaraTerpilih && (millis() - lastVoiceTime > jedaSuara)) {
+      Serial.println("[!] SUARA: AWAS DEPAN");
+      sendMP3Command(0x03, 0x0003); // Putar File 003.mp3
+      suaraTerpilih = true;
+    }
+  } else { digitalWrite(vibro3, LOW); }
+
+  // Update waktu suara terakhir jika ada yang diputar
+  if (suaraTerpilih) lastVoiceTime = millis();
+}
+
+void loop() {
+  // Ambil data jarak
+  float d1 = ambilJarak(trig1, echo1);
+  delay(10);
+  float d2 = ambilJarak(trig2, echo2);
+  delay(10);
+  float d3 = ambilJarak(trig3, echo3);
+
+  // Print Monitor berkala
+  Serial.print("Dist (cm) -> D: "); Serial.print(d1);
+  Serial.print(" | K: "); Serial.print(d2);
+  Serial.print(" | Kn: "); Serial.println(d3);
+
+  // Jalankan logika getar dan perintah suara
+  prosesLogika(d1, d2, d3);
+  
+  delay(100); 
+}
