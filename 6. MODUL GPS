@@ -1,0 +1,123 @@
+EEFFGGVV#include <WiFi.h>
+#include <HTTPClient.h>
+#include <Base64.h>
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>
+
+// ==========================================
+// 1. KONFIGURASI WIFI & TWILIO (DIPERBARUI)
+// ==========================================
+const char* ssid       = "WANDIL";
+const char* password   = "iloveyou";
+
+const char* account_sid = "AC927e5321e6c3e579b5bbdd8b9540aa78"; 
+const char* auth_token  = "22cc76d0c81a7f63248a633cdc879b48"; 
+
+// Pastikan nomor diawali + tanpa spasi
+const char* from_number = "+14155238886";  // Nomor Sandbox Twilio
+const char* to_number   = "+6282283871626"; // Nomor WA Tujuan Anda
+
+// ==========================================
+// 2. KONFIGURASI PIN & OBJEK
+// ==========================================
+#define BUTTON_PIN 4
+#define GPS_RX_PIN 34 // Pin RX di ESP32 (Hubungkan ke TX GPS)
+#define GPS_TX_PIN 35 // Pin TX di ESP32 (Hubungkan ke RX GPS)
+
+SoftwareSerial gpsSerial(GPS_RX_PIN, GPS_TX_PIN);
+TinyGPSPlus gps;
+
+// ==========================================
+// 3. FUNGSI KIRIM WHATSAPP TWILIO (FINAL FIX)
+// ==========================================
+void sendTwilioWA(String pesanTeks) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "https://api.twilio.com/2010-04-01/Accounts/" + String(account_sid) + "/Messages.json";
+    
+    http.begin(url);
+    
+    // Auth Basic: SID:TOKEN di-encode ke Base64
+    String sSID = String(account_sid); sSID.trim();
+    String sToken = String(auth_token); sToken.trim();
+    String auth = sSID + ":" + sToken;
+    String encodedAuth = base64::encode(auth);
+    
+    http.addHeader("Authorization", "Basic " + encodedAuth);
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    
+    // Penanganan khusus untuk nomor telepon (Ganti + dengan %2B)
+    String sFrom = String(from_number); sFrom.trim();
+    String sTo = String(to_number); sTo.trim();
+    sFrom.replace("+", "%2B");
+    sTo.replace("+", "%2B");
+    
+    // Konstruksi Body Pesan
+    String postData = "To=whatsapp:" + sTo;
+    postData += "&From=whatsapp:" + sFrom;
+    postData += "&Body=" + pesanTeks;
+    
+    Serial.println("\n--- DEBUG OUTGOING DATA (FINAL) ---");
+    Serial.println("Post Data: " + postData);
+    
+    int httpResponseCode = http.POST(postData);
+    String response = http.getString();
+    
+    Serial.print("HTTP Response Code: "); Serial.println(httpResponseCode);
+    Serial.println("Server Response: " + response);
+    Serial.println("-----------------------------------\n");
+    
+    http.end();
+  } else {
+    Serial.println("WiFi tidak terhubung!");
+  }
+}
+
+// ==========================================
+// 4. SETUP & LOOP
+// ==========================================
+void setup() {
+  Serial.begin(115200);
+  gpsSerial.begin(9600); // Default baudrate GPS NEO-6M
+  
+  pinMode(BUTTON_PIN, INPUT); // Pakai HIGH jika modul tombol 3-pin
+
+  WiFi.begin(ssid, password);
+  Serial.print("Menghubungkan ke WiFi " + String(ssid));
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi Berhasil Terhubung!");
+}
+
+void loop() {
+  // Selalu baca data dari modul GPS di setiap loop
+  while (gpsSerial.available() > 0) {
+    gps.encode(gpsSerial.read());
+  }
+
+  // Cek jika tombol ditekan
+  if (digitalRead(BUTTON_PIN) == HIGH) { 
+    Serial.println("[!] Tombol Ditekan! Mengecek Lokasi GPS...");
+    
+    if (gps.location.isValid()) {
+      float lat = gps.location.lat();
+      float lon = gps.location.lng();
+      
+      // Format Link Google Maps
+      String mapLink = "https://www.google.com/maps?q=" + String(lat, 6) + "," + String(lon, 6);
+      
+      // Gunakan tanda + sebagai pengganti spasi (URL Encoding)
+      String pesan = "PANGGILAN+DARURAT!+Posisi+Engineer:+" + mapLink;
+      
+      sendTwilioWA(pesan);
+      
+      // Delay 5 detik agar tidak terkirim berkali-kali jika tombol tertahan
+      delay(5000); 
+    } else {
+      Serial.println("[x] Sinyal GPS belum didapat. Pastikan antena menghadap langit.");
+      delay(1000);
+    }
+  }
+}
