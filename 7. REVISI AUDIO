@@ -1,0 +1,132 @@
+#include <SoftwareSerial.h>
+
+// --- Konfigurasi MP3 YX5300 ---
+#define MP3_RX_PIN 25 
+#define MP3_TX_PIN 26 
+SoftwareSerial mp3Serial(MP3_RX_PIN, MP3_TX_PIN);
+
+// --- Konfigurasi Pin Sensor HC-SR04 ---
+const int trigDepan = 5;  const int echoDepan = 18;
+const int trigKiri  = 13; const int echoKiri  = 12;
+const int trigKanan = 14; const int echoKanan = 27;
+
+// --- Konfigurasi Pin Motor Getar ---
+const int vibroDepan = 19;
+const int vibroKiri  = 21;
+const int vibroKanan = 22;
+
+// --- Variabel Logika ---
+#define SOUND_SPEED 0.034
+const int jarakDeteksi = 100; // Ambang batas 100cm
+
+// FLAG KONDISI (State Management)
+bool terhalangDepan = false;
+bool terhalangKiri  = false;
+bool terhalangKanan = false;
+
+void sendMP3Command(uint8_t command, uint16_t dat) {
+  uint8_t frame[8] = {0x7e, 0xff, 0x06, command, 0x00, (uint8_t)(dat >> 8), (uint8_t)(dat & 0xff), 0xef};
+  for (uint8_t i = 0; i < 8; i++) {
+    mp3Serial.write(frame[i]);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  mp3Serial.begin(9600);
+  
+  pinMode(trigDepan, OUTPUT); pinMode(echoDepan, INPUT);
+  pinMode(trigKiri, OUTPUT);  pinMode(echoKiri, INPUT);
+  pinMode(trigKanan, OUTPUT); pinMode(echoKanan, INPUT);
+  
+  pinMode(vibroDepan, OUTPUT);
+  pinMode(vibroKiri, OUTPUT);
+  pinMode(vibroKanan, OUTPUT);
+
+  delay(2000); 
+  sendMP3Command(0x06, 25); // Volume Set
+  
+  Serial.println("SYSTEM READY: 3-Way Navigation with Specific Feedback");
+}
+
+float ambilJarak(int t, int e) {
+  digitalWrite(t, LOW);
+  delayMicroseconds(2);
+  digitalWrite(t, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  
+  long duration = pulseIn(e, HIGH, 30000); 
+  float dist = duration * SOUND_SPEED / 2;
+  
+  if (dist <= 0 || dist > 400) return 999.0;
+  return dist;
+}
+
+void prosesLogika(float dD, float dKi, float dKa) {
+  
+  // --- LOGIKA DEPAN ---
+  if (dD < jarakDeteksi) {
+    digitalWrite(vibroDepan, HIGH);
+    if (!terhalangDepan) {
+      Serial.println("[!] AWAS DEPAN");
+      sendMP3Command(0x03, 0x0003); // File 003: Awas objek depan
+      terhalangDepan = true; 
+    }
+  } else {
+    digitalWrite(vibroDepan, LOW);
+    if (terhalangDepan) {
+      Serial.println("[v] DEPAN DILEWATI");
+      sendMP3Command(0x03, 0x0006); // File 006: Depan dilewati
+      terhalangDepan = false;
+    }
+  }
+
+  // --- LOGIKA KIRI ---
+  if (dKi < jarakDeteksi) {
+    digitalWrite(vibroKiri, HIGH);
+    if (!terhalangKiri) {
+      Serial.println("[!] AWAS KIRI");
+      sendMP3Command(0x03, 0x0001); // File 001: Awas objek kiri
+      terhalangKiri = true;
+    }
+  } else {
+    digitalWrite(vibroKiri, LOW);
+    if (terhalangKiri) {
+      Serial.println("[v] KIRI DILEWATI");
+      sendMP3Command(0x03, 0x0004); // File 004: Kiri dilewati
+      terhalangKiri = false;
+    }
+  }
+
+  // --- LOGIKA KANAN ---
+  if (dKa < jarakDeteksi) {
+    digitalWrite(vibroKanan, HIGH);
+    if (!terhalangKanan) {
+      Serial.println("[!] AWAS KANAN");
+      sendMP3Command(0x03, 0x0002); // File 002: Awas objek kanan
+      terhalangKanan = true;
+    }
+  } else {
+    digitalWrite(vibroKanan, LOW);
+    if (terhalangKanan) {
+      Serial.println("[v] KANAN DILEWATI");
+      sendMP3Command(0x03, 0x0005); // File 005: Kanan dilewati
+      terhalangKanan = false;
+    }
+  }
+}
+
+void loop() {
+  float distD  = ambilJarak(trigDepan, echoDepan);
+  delay(30); 
+  float distKi = ambilJarak(trigKiri, echoKiri);
+  delay(30);
+  float distKa = ambilJarak(trigKanan, echoKanan);
+
+  // Monitor Jarak
+  Serial.printf("D: %.2f | Ki: %.2f | Ka: %.2f\n", distD, distKi, distKa);
+
+  prosesLogika(distD, distKi, distKa);
+  delay(50); 
+}
