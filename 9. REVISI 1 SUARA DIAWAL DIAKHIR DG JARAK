@@ -1,0 +1,143 @@
+#include <SoftwareSerial.h>
+
+// --- Konfigurasi MP3 YX5300 ---
+#define MP3_RX_PIN 25 
+#define MP3_TX_PIN 26 
+SoftwareSerial mp3Serial(MP3_RX_PIN, MP3_TX_PIN);
+
+// --- Konfigurasi Pin Sensor HC-SR04 ---
+const int trigDepan = 5;  const int echoDepan = 18;
+const int trigKiri  = 13; const int echoKiri  = 12;
+const int trigKanan = 14; const int echoKanan = 27;
+
+// --- Konfigurasi Pin Motor Getar ---
+const int vibroDepan = 19;
+const int vibroKiri  = 21;
+const int vibroKanan = 22;
+
+// --- Variabel Logika ---
+#define SOUND_SPEED 0.034
+const int batasAwas = 100; // Trigger suara "Awas"
+const int batasAman = 115; // Trigger suara "Dilewati"
+
+// FLAG KONDISI
+bool terhalangDepan = false;
+bool terhalangKiri  = false;
+bool terhalangKanan = false;
+
+void sendMP3Command(uint8_t command, uint16_t dat) {
+  uint8_t frame[8] = {0x7e, 0xff, 0x06, command, 0x00, (uint8_t)(dat >> 8), (uint8_t)(dat & 0xff), 0xef};
+  for (uint8_t i = 0; i < 8; i++) {
+    mp3Serial.write(frame[i]);
+  }
+  delay(100); 
+}
+
+void setup() {
+  Serial.begin(115200);
+  mp3Serial.begin(9600);
+  
+  pinMode(trigDepan, OUTPUT); pinMode(echoDepan, INPUT);
+  pinMode(trigKiri, OUTPUT);  pinMode(echoKiri, INPUT);
+  pinMode(trigKanan, OUTPUT); pinMode(echoKanan, INPUT);
+  
+  pinMode(vibroDepan, OUTPUT);
+  pinMode(vibroKiri, OUTPUT);
+  pinMode(vibroKanan, OUTPUT);
+
+  delay(2000); 
+  sendMP3Command(0x06, 25); 
+  
+  Serial.println("\n========================================");
+  Serial.println("SYSTEM MONITORING: Jarak Sensor Aktif");
+  Serial.println("========================================\n");
+}
+
+float ambilJarak(int t, int e) {
+  digitalWrite(t, LOW);
+  delayMicroseconds(2);
+  digitalWrite(t, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  
+  long duration = pulseIn(e, HIGH, 25000); 
+  float dist = duration * SOUND_SPEED / 2;
+  
+  if (dist <= 0 || dist > 400) return 999.0;
+  return dist;
+}
+
+void prosesLogika(float dD, float dKi, float dKa) {
+  // LOGIKA DEPAN
+  if (dD < batasAwas) {
+    digitalWrite(vibroDepan, HIGH);
+    if (!terhalangDepan) {
+      sendMP3Command(0x03, 0x0003); // Awas depan
+      terhalangDepan = true;
+      Serial.println(">>> [VOICE] OBJEK DEPAN TERDETEKSI!");
+    }
+  } else if (dD > batasAman) {
+    digitalWrite(vibroDepan, LOW);
+    if (terhalangDepan) {
+      sendMP3Command(0x03, 0x0006); // Depan dilewati
+      terhalangDepan = false;
+      Serial.println(">>> [VOICE] OBJEK DEPAN SUDAH DILEWATI");
+    }
+  }
+
+  // LOGIKA KIRI
+  if (dKi < batasAwas) {
+    digitalWrite(vibroKiri, HIGH);
+    if (!terhalangKiri) {
+      sendMP3Command(0x03, 0x0001); // Awas kiri
+      terhalangKiri = true;
+      Serial.println(">>> [VOICE] OBJEK KIRI TERDETEKSI!");
+    }
+  } else if (dKi > batasAman) {
+    digitalWrite(vibroKiri, LOW);
+    if (terhalangKiri) {
+      sendMP3Command(0x03, 0x0004); // Kiri dilewati
+      terhalangKiri = false;
+      Serial.println(">>> [VOICE] OBJEK KIRI SUDAH DILEWATI");
+    }
+  }
+
+  // LOGIKA KANAN
+  if (dKa < batasAwas) {
+    digitalWrite(vibroKanan, HIGH);
+    if (!terhalangKanan) {
+      sendMP3Command(0x03, 0x0002); // Awas kanan
+      terhalangKanan = true;
+      Serial.println(">>> [VOICE] OBJEK KANAN TERDETEKSI!");
+    }
+  } else if (dKa > batasAman) {
+    digitalWrite(vibroKanan, LOW);
+    if (terhalangKanan) {
+      sendMP3Command(0x03, 0x0005); // Kanan dilewati
+      terhalangKanan = false;
+      Serial.println(">>> [VOICE] OBJEK KANAN SUDAH DILEWATI");
+    }
+  }
+}
+
+void loop() {
+  // Ambil Data Jarak
+  float distD  = ambilJarak(trigDepan, echoDepan);
+  delay(80); 
+  float distKi = ambilJarak(trigKiri, echoKiri);
+  delay(80);
+  float distKa = ambilJarak(trigKanan, echoKanan);
+
+  // Tampilkan di Serial Monitor
+  Serial.print("JARAK (cm) -> Depan: ");
+  Serial.print(distD, 1); // Menampilkan 1 angka di belakang koma
+  Serial.print(" | Kiri: ");
+  Serial.print(distKi, 1);
+  Serial.print(" | Kanan: ");
+  Serial.println(distKa, 1);
+
+  // Jalankan Logika
+  prosesLogika(distD, distKi, distKa);
+
+  delay(250); 
+}
