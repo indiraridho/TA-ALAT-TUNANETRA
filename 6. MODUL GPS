@@ -1,4 +1,4 @@
-EEFFGGVV#include <WiFi.h>
+#include <WiFi.h>
 #include <HTTPClient.h>
 #include <Base64.h>
 #include <SoftwareSerial.h>
